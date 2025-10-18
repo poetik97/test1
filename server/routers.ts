@@ -178,10 +178,14 @@ export const appRouter = router({
 
   events: router({
     list: protectedProcedure.query(async ({ ctx }) => {
-      return await prisma.event.findMany({
-        where: { userId: ctx.user.id },
-        orderBy: { startTime: 'asc' },
-      });
+      const { data, error } = await supabase
+        .from('events')
+        .select('*')
+        .eq('userId', ctx.user.id)
+        .order('startTime', { ascending: true });
+
+      if (error) throw error;
+      return data || [];
     }),
 
     create: protectedProcedure
@@ -194,17 +198,22 @@ export const appRouter = router({
         category: z.enum(['work', 'personal', 'health', 'finance', 'other']).optional(),
       }))
       .mutation(async ({ ctx, input }) => {
-        return await prisma.event.create({
-          data: {
+        const { data, error } = await supabase
+          .from('events')
+          .insert({
             userId: ctx.user.id,
             title: input.title,
             description: input.description,
-            startTime: new Date(input.startTime),
-            endTime: new Date(input.endTime),
+            startTime: input.startTime,
+            endTime: input.endTime,
             location: input.location,
             category: input.category || 'other',
-          },
-        });
+          })
+          .select()
+          .single();
+
+        if (error) throw error;
+        return data;
       }),
 
     update: protectedProcedure
@@ -218,33 +227,43 @@ export const appRouter = router({
         category: z.enum(['work', 'personal', 'health', 'finance', 'other']).optional(),
       }))
       .mutation(async ({ ctx, input }) => {
-        const { id, ...data } = input;
-        return await prisma.event.update({
-          where: { id },
-          data: {
-            ...data,
-            startTime: data.startTime ? new Date(data.startTime) : undefined,
-            endTime: data.endTime ? new Date(data.endTime) : undefined,
-          },
-        });
+        const { id, ...updates } = input;
+        const { data, error } = await supabase
+          .from('events')
+          .update(updates)
+          .eq('id', id)
+          .eq('userId', ctx.user.id)
+          .select()
+          .single();
+
+        if (error) throw error;
+        return data;
       }),
 
     delete: protectedProcedure
       .input(z.object({ id: z.string() }))
       .mutation(async ({ ctx, input }) => {
-        return await prisma.event.delete({
-          where: { id: input.id },
-        });
+        const { error } = await supabase
+          .from('events')
+          .delete()
+          .eq('id', input.id)
+          .eq('userId', ctx.user.id);
+
+        if (error) throw error;
+        return { success: true };
       }),
   }),
 
   goals: router({
     list: protectedProcedure.query(async ({ ctx }) => {
-      return await prisma.goal.findMany({
-        where: { userId: ctx.user.id },
-        include: { checkins: true },
-        orderBy: { createdAt: 'desc' },
-      });
+      const { data, error } = await supabase
+        .from('goals')
+        .select('*, goal_checkins(*)')
+        .eq('userId', ctx.user.id)
+        .order('createdAt', { ascending: false });
+
+      if (error) throw error;
+      return data || [];
     }),
 
     create: protectedProcedure
@@ -258,18 +277,23 @@ export const appRouter = router({
         category: z.enum(['work', 'personal', 'health', 'finance', 'other']).optional(),
       }))
       .mutation(async ({ ctx, input }) => {
-        return await prisma.goal.create({
-          data: {
+        const { data, error } = await supabase
+          .from('goals')
+          .insert({
             userId: ctx.user.id,
             title: input.title,
             description: input.description,
             targetValue: input.targetValue,
             currentValue: input.currentValue || 0,
             unit: input.unit,
-            deadline: input.deadline ? new Date(input.deadline) : null,
+            deadline: input.deadline || null,
             category: input.category || 'other',
-          },
-        });
+          })
+          .select()
+          .single();
+
+        if (error) throw error;
+        return data;
       }),
 
     update: protectedProcedure
@@ -285,50 +309,68 @@ export const appRouter = router({
         status: z.enum(['active', 'completed', 'abandoned']).optional(),
       }))
       .mutation(async ({ ctx, input }) => {
-        const { id, ...data } = input;
-        return await prisma.goal.update({
-          where: { id },
-          data: {
-            ...data,
-            deadline: data.deadline ? new Date(data.deadline) : undefined,
-          },
-        });
+        const { id, ...updates } = input;
+        const { data, error } = await supabase
+          .from('goals')
+          .update(updates)
+          .eq('id', id)
+          .eq('userId', ctx.user.id)
+          .select()
+          .single();
+
+        if (error) throw error;
+        return data;
       }),
 
     delete: protectedProcedure
       .input(z.object({ id: z.string() }))
       .mutation(async ({ ctx, input }) => {
-        return await prisma.goal.delete({
-          where: { id: input.id },
-        });
+        const { error } = await supabase
+          .from('goals')
+          .delete()
+          .eq('id', input.id)
+          .eq('userId', ctx.user.id);
+
+        if (error) throw error;
+        return { success: true };
       }),
 
     updateProgress: protectedProcedure
       .input(z.object({ id: z.string(), currentValue: z.number() }))
       .mutation(async ({ ctx, input }) => {
-        const goal = await prisma.goal.findFirst({
-          where: { id: input.id, userId: ctx.user.id },
-        });
+        const { data: goal } = await supabase
+          .from('goals')
+          .select('targetValue')
+          .eq('id', input.id)
+          .eq('userId', ctx.user.id)
+          .single();
+
         if (!goal) throw new Error('Goal not found');
-        
+
         const status = input.currentValue >= goal.targetValue ? 'completed' : 'active';
-        
-        return await prisma.goal.update({
-          where: { id: input.id },
-          data: { 
-            currentValue: input.currentValue,
-            status,
-          },
-        });
+
+        const { data, error } = await supabase
+          .from('goals')
+          .update({ currentValue: input.currentValue, status })
+          .eq('id', input.id)
+          .select()
+          .single();
+
+        if (error) throw error;
+        return data;
       }),
   }),
 
   transactions: router({
     list: protectedProcedure.query(async ({ ctx }) => {
-      return await prisma.transaction.findMany({
-        where: { userId: ctx.user.id },
-        orderBy: { date: 'desc' },
-      });
+      const { data, error } = await supabase
+        .from('transactions')
+        .select('*')
+        .eq('userId', ctx.user.id)
+        .order('date', { ascending: false });
+
+      if (error) throw error;
+      return data || [];
     }),
 
     create: protectedProcedure
@@ -340,16 +382,21 @@ export const appRouter = router({
         date: z.string(),
       }))
       .mutation(async ({ ctx, input }) => {
-        return await prisma.transaction.create({
-          data: {
+        const { data, error } = await supabase
+          .from('transactions')
+          .insert({
             userId: ctx.user.id,
             type: input.type,
             amount: input.amount,
             category: input.category,
             description: input.description,
-            date: new Date(input.date),
-          },
-        });
+            date: input.date,
+          })
+          .select()
+          .single();
+
+        if (error) throw error;
+        return data;
       }),
 
     update: protectedProcedure
@@ -362,32 +409,44 @@ export const appRouter = router({
         date: z.string().optional(),
       }))
       .mutation(async ({ ctx, input }) => {
-        const { id, ...data } = input;
-        return await prisma.transaction.update({
-          where: { id },
-          data: {
-            ...data,
-            date: data.date ? new Date(data.date) : undefined,
-          },
-        });
+        const { id, ...updates } = input;
+        const { data, error } = await supabase
+          .from('transactions')
+          .update(updates)
+          .eq('id', id)
+          .eq('userId', ctx.user.id)
+          .select()
+          .single();
+
+        if (error) throw error;
+        return data;
       }),
 
     delete: protectedProcedure
       .input(z.object({ id: z.string() }))
       .mutation(async ({ ctx, input }) => {
-        return await prisma.transaction.delete({
-          where: { id: input.id },
-        });
+        const { error } = await supabase
+          .from('transactions')
+          .delete()
+          .eq('id', input.id)
+          .eq('userId', ctx.user.id);
+
+        if (error) throw error;
+        return { success: true };
       }),
   }),
 
   // Diary Router
   diary: router({
     list: protectedProcedure.query(async ({ ctx }) => {
-      return await prisma.diaryEntry.findMany({
-        where: { userId: ctx.user.id },
-        orderBy: { date: 'desc' },
-      });
+      const { data, error } = await supabase
+        .from('diary_entries')
+        .select('*')
+        .eq('userId', ctx.user.id)
+        .order('createdAt', { ascending: false });
+
+      if (error) throw error;
+      return data || [];
     }),
 
     create: protectedProcedure
@@ -398,15 +457,19 @@ export const appRouter = router({
         date: z.string().optional(),
       }))
       .mutation(async ({ ctx, input }) => {
-        return await prisma.diaryEntry.create({
-          data: {
+        const { data, error } = await supabase
+          .from('diary_entries')
+          .insert({
             userId: ctx.user.id,
             title: input.title,
             content: input.content,
             mood: input.mood || 'neutral',
-            date: input.date ? new Date(input.date) : new Date(),
-          },
-        });
+          })
+          .select()
+          .single();
+
+        if (error) throw error;
+        return data;
       }),
 
     update: protectedProcedure
@@ -418,32 +481,44 @@ export const appRouter = router({
         date: z.string().optional(),
       }))
       .mutation(async ({ ctx, input }) => {
-        const { id, ...data } = input;
-        return await prisma.diaryEntry.update({
-          where: { id },
-          data: {
-            ...data,
-            date: data.date ? new Date(data.date) : undefined,
-          },
-        });
+        const { id, ...updates } = input;
+        const { data, error } = await supabase
+          .from('diary_entries')
+          .update(updates)
+          .eq('id', id)
+          .eq('userId', ctx.user.id)
+          .select()
+          .single();
+
+        if (error) throw error;
+        return data;
       }),
 
     delete: protectedProcedure
       .input(z.object({ id: z.string() }))
       .mutation(async ({ ctx, input }) => {
-        return await prisma.diaryEntry.delete({
-          where: { id: input.id },
-        });
+        const { error } = await supabase
+          .from('diary_entries')
+          .delete()
+          .eq('id', input.id)
+          .eq('userId', ctx.user.id);
+
+        if (error) throw error;
+        return { success: true };
       }),
   }),
 
   // Menstrual Cycle Router
   menstrualCycle: router({
     list: protectedProcedure.query(async ({ ctx }) => {
-      return await prisma.menstrualCycle.findMany({
-        where: { userId: ctx.user.id },
-        orderBy: { startDate: 'desc' },
-      });
+      const { data, error } = await supabase
+        .from('menstrual_cycles')
+        .select('*')
+        .eq('userId', ctx.user.id)
+        .order('startDate', { ascending: false });
+
+      if (error) throw error;
+      return data || [];
     }),
 
     create: protectedProcedure
@@ -454,15 +529,20 @@ export const appRouter = router({
         symptoms: z.string().optional(),
       }))
       .mutation(async ({ ctx, input }) => {
-        return await prisma.menstrualCycle.create({
-          data: {
+        const { data, error } = await supabase
+          .from('menstrual_cycles')
+          .insert({
             userId: ctx.user.id,
-            startDate: new Date(input.startDate),
-            endDate: input.endDate ? new Date(input.endDate) : null,
+            startDate: input.startDate,
+            endDate: input.endDate || null,
             flow: input.flow || 'medium',
-            symptoms: input.symptoms,
-          },
-        });
+            notes: input.symptoms,
+          })
+          .select()
+          .single();
+
+        if (error) throw error;
+        return data;
       }),
 
     update: protectedProcedure
@@ -474,34 +554,48 @@ export const appRouter = router({
         symptoms: z.string().optional(),
       }))
       .mutation(async ({ ctx, input }) => {
-        const { id, ...data } = input;
-        return await prisma.menstrualCycle.update({
-          where: { id },
-          data: {
-            ...data,
-            startDate: data.startDate ? new Date(data.startDate) : undefined,
-            endDate: data.endDate ? new Date(data.endDate) : undefined,
-          },
-        });
+        const { id, symptoms, ...updates } = input;
+        const updateData = { ...updates };
+        if (symptoms) updateData.notes = symptoms;
+
+        const { data, error } = await supabase
+          .from('menstrual_cycles')
+          .update(updateData)
+          .eq('id', id)
+          .eq('userId', ctx.user.id)
+          .select()
+          .single();
+
+        if (error) throw error;
+        return data;
       }),
 
     delete: protectedProcedure
       .input(z.object({ id: z.string() }))
       .mutation(async ({ ctx, input }) => {
-        return await prisma.menstrualCycle.delete({
-          where: { id: input.id },
-        });
+        const { error } = await supabase
+          .from('menstrual_cycles')
+          .delete()
+          .eq('id', input.id)
+          .eq('userId', ctx.user.id);
+
+        if (error) throw error;
+        return { success: true };
       }),
   }),
 
   // Chat IA Router
   chat: router({
     list: protectedProcedure.query(async ({ ctx }) => {
-      return await prisma.chatMessage.findMany({
-        where: { userId: ctx.user.id },
-        orderBy: { createdAt: 'asc' },
-        take: 50,
-      });
+      const { data, error } = await supabase
+        .from('chat_messages')
+        .select('*')
+        .eq('userId', ctx.user.id)
+        .order('createdAt', { ascending: true })
+        .limit(50);
+
+      if (error) throw error;
+      return data || [];
     }),
 
     send: protectedProcedure
@@ -510,66 +604,82 @@ export const appRouter = router({
       }))
       .mutation(async ({ ctx, input }) => {
         // Save user message
-        await prisma.chatMessage.create({
-          data: {
+        await supabase
+          .from('chat_messages')
+          .insert({
             userId: ctx.user.id,
             role: 'user',
             content: input.message,
-          },
-        });
+          });
 
         // TODO: Integrate with GPT-4 API
         const aiResponse = "Funcionalidade de IA será integrada em breve!";
 
         // Save AI response
-        return await prisma.chatMessage.create({
-          data: {
+        const { data, error } = await supabase
+          .from('chat_messages')
+          .insert({
             userId: ctx.user.id,
             role: 'assistant',
             content: aiResponse,
-          },
-        });
+          })
+          .select()
+          .single();
+
+        if (error) throw error;
+        return data;
       }),
   }),
 
   // Notifications Router
   notifications: router({
     list: protectedProcedure.query(async ({ ctx }) => {
-      return await prisma.notification.findMany({
-        where: { userId: ctx.user.id },
-        orderBy: { createdAt: 'desc' },
-        take: 20,
-      });
+      const { data, error } = await supabase
+        .from('notifications')
+        .select('*')
+        .eq('userId', ctx.user.id)
+        .order('createdAt', { ascending: false })
+        .limit(20);
+
+      if (error) throw error;
+      return data || [];
     }),
 
     markAsRead: protectedProcedure
       .input(z.object({ id: z.string() }))
       .mutation(async ({ ctx, input }) => {
-        return await prisma.notification.update({
-          where: { id: input.id, userId: ctx.user.id },
-          data: { read: true },
-        });
+        const { data, error } = await supabase
+          .from('notifications')
+          .update({ read: true })
+          .eq('id', input.id)
+          .eq('userId', ctx.user.id)
+          .select()
+          .single();
+
+        if (error) throw error;
+        return data;
       }),
   }),
 
   // Gamification Router
   gamification: router({
     profile: protectedProcedure.query(async ({ ctx }) => {
-      const userBadges = await prisma.userBadge.findMany({
-        where: { userId: ctx.user.id },
-        include: { badge: true },
-      });
+      const { data: userBadges } = await supabase
+        .from('user_badges')
+        .select('*, badges(*)')
+        .eq('userId', ctx.user.id);
 
-      const achievements = await prisma.achievement.findMany({
-        where: { userId: ctx.user.id },
-        orderBy: { unlockedAt: 'desc' },
-      });
+      const { data: achievements } = await supabase
+        .from('achievements')
+        .select('*')
+        .eq('userId', ctx.user.id)
+        .order('createdAt', { ascending: false });
 
       return {
-        level: Math.floor(ctx.user.xp / 1000) + 1,
+        level: Math.floor((ctx.user.xp || 0) / 1000) + 1,
         xp: ctx.user.xp || 0,
-        badges: userBadges,
-        achievements,
+        badges: userBadges || [],
+        achievements: achievements || [],
       };
     }),
   }),
@@ -577,24 +687,21 @@ export const appRouter = router({
   // Dashboard Stats
   dashboard: router({
     stats: protectedProcedure.query(async ({ ctx }) => {
-      const [tasksCount, eventsCount, goalsCount, transactions] = await Promise.all([
-        prisma.task.count({ where: { userId: ctx.user.id, status: { not: 'done' } } }),
-        prisma.event.count({ where: { userId: ctx.user.id, startTime: { gte: new Date() } } }),
-        prisma.goal.count({ where: { userId: ctx.user.id, status: 'active' } }),
-        prisma.transaction.findMany({
-          where: { userId: ctx.user.id },
-          select: { type: true, amount: true },
-        }),
+      const [tasksResult, eventsResult, goalsResult, transactionsResult] = await Promise.all([
+        supabase.from('tasks').select('id', { count: 'exact', head: true }).eq('userId', ctx.user.id).neq('status', 'done'),
+        supabase.from('events').select('id', { count: 'exact', head: true }).eq('userId', ctx.user.id).gte('startTime', new Date().toISOString()),
+        supabase.from('goals').select('id', { count: 'exact', head: true }).eq('userId', ctx.user.id).eq('status', 'active'),
+        supabase.from('transactions').select('type, amount').eq('userId', ctx.user.id),
       ]);
 
-      const balance = transactions.reduce((acc, t) => {
+      const balance = (transactionsResult.data || []).reduce((acc, t) => {
         return acc + (t.type === 'income' ? t.amount : -t.amount);
       }, 0);
 
       return {
-        tasksCount,
-        eventsCount,
-        goalsCount,
+        tasksCount: tasksResult.count || 0,
+        eventsCount: eventsResult.count || 0,
+        goalsCount: goalsResult.count || 0,
         balance,
       };
     }),
