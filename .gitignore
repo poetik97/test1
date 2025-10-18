@@ -29,3 +29,4 @@ prisma/migrations/
 # Temporary files
 *.tmp
 .cache/
+.env
