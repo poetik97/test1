@@ -1,0 +1,778 @@
+import { z } from "zod";
+import { COOKIE_NAME } from "@shared/const";
+import { getSessionCookieOptions } from "./_core/cookies";
+import { systemRouter } from "./_core/systemRouter";
+import { publicProcedure, protectedProcedure, router } from "./_core/trpc";
+import * as db from "./db";
+import { nanoid } from "nanoid";
+
+export const appRouter = router({
+  system: systemRouter,
+
+  auth: router({
+    me: publicProcedure.query(opts => opts.ctx.user),
+    logout: publicProcedure.mutation(({ ctx }) => {
+      const cookieOptions = getSessionCookieOptions(ctx.req);
+      ctx.res.clearCookie(COOKIE_NAME, { ...cookieOptions, maxAge: -1 });
+      return {
+        success: true,
+      } as const;
+    }),
+  }),
+
+  // ============================================
+  // TASKS ROUTER
+  // ============================================
+  tasks: router({
+    list: protectedProcedure.query(async ({ ctx }) => {
+      return db.getUserTasks(ctx.user.id);
+    }),
+
+    create: protectedProcedure
+      .input(z.object({
+        title: z.string(),
+        description: z.string().optional(),
+        status: z.enum(["todo", "in_progress", "done", "archived"]).default("todo"),
+        priority: z.enum(["low", "medium", "high", "urgent"]).default("medium"),
+        category: z.string().optional(),
+        dueDate: z.date().optional(),
+        estimatedTime: z.number().optional(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const task = await db.createTask({
+          id: nanoid(),
+          userId: ctx.user.id,
+          ...input,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        });
+        return task;
+      }),
+
+    update: protectedProcedure
+      .input(z.object({
+        id: z.string(),
+        title: z.string().optional(),
+        description: z.string().optional(),
+        status: z.enum(["todo", "in_progress", "done", "archived"]).optional(),
+        priority: z.enum(["low", "medium", "high", "urgent"]).optional(),
+        category: z.string().optional(),
+        dueDate: z.date().optional(),
+        estimatedTime: z.number().optional(),
+        completedAt: z.date().optional(),
+      }))
+      .mutation(async ({ input }) => {
+        const { id, ...data } = input;
+        return db.updateTask(id, { ...data, updatedAt: new Date() });
+      }),
+
+    delete: protectedProcedure
+      .input(z.object({ id: z.string() }))
+      .mutation(async ({ input }) => {
+        return db.deleteTask(input.id);
+      }),
+  }),
+
+  // ============================================
+  // EVENTS ROUTER
+  // ============================================
+  events: router({
+    list: protectedProcedure
+      .input(z.object({
+        startDate: z.date().optional(),
+        endDate: z.date().optional(),
+      }).optional())
+      .query(async ({ ctx, input }) => {
+        return db.getUserEvents(
+          ctx.user.id,
+          input?.startDate,
+          input?.endDate
+        );
+      }),
+
+    create: protectedProcedure
+      .input(z.object({
+        title: z.string(),
+        description: z.string().optional(),
+        startDate: z.date(),
+        endDate: z.date(),
+        location: z.string().optional(),
+        color: z.string().optional(),
+        isAllDay: z.boolean().default(false),
+        reminder: z.number().optional(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        return db.createEvent({
+          id: nanoid(),
+          userId: ctx.user.id,
+          ...input,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        });
+      }),
+
+    update: protectedProcedure
+      .input(z.object({
+        id: z.string(),
+        title: z.string().optional(),
+        description: z.string().optional(),
+        startDate: z.date().optional(),
+        endDate: z.date().optional(),
+        location: z.string().optional(),
+        color: z.string().optional(),
+        isAllDay: z.boolean().optional(),
+        reminder: z.number().optional(),
+      }))
+      .mutation(async ({ input }) => {
+        const { id, ...data } = input;
+        return db.updateEvent(id, { ...data, updatedAt: new Date() });
+      }),
+
+    delete: protectedProcedure
+      .input(z.object({ id: z.string() }))
+      .mutation(async ({ input }) => {
+        return db.deleteEvent(input.id);
+      }),
+
+    // AI: Parse natural language to create event
+    createFromNaturalLanguage: protectedProcedure
+      .input(z.object({ text: z.string() }))
+      .mutation(async ({ ctx, input }) => {
+        // TODO: Implement AI parsing logic
+        // For now, return a placeholder
+        return {
+          success: false,
+          message: "AI parsing not implemented yet",
+        };
+      }),
+  }),
+
+  // ============================================
+  // GOALS ROUTER
+  // ============================================
+  goals: router({
+    list: protectedProcedure.query(async ({ ctx }) => {
+      return db.getUserGoals(ctx.user.id);
+    }),
+
+    create: protectedProcedure
+      .input(z.object({
+        title: z.string(),
+        description: z.string().optional(),
+        category: z.string().optional(),
+        targetDate: z.date().optional(),
+        isSpecific: z.boolean().default(false),
+        isMeasurable: z.boolean().default(false),
+        isAchievable: z.boolean().default(false),
+        isRelevant: z.boolean().default(false),
+        isTimeBound: z.boolean().default(false),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        return db.createGoal({
+          id: nanoid(),
+          userId: ctx.user.id,
+          ...input,
+          progress: 0,
+          status: "active",
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        });
+      }),
+
+    update: protectedProcedure
+      .input(z.object({
+        id: z.string(),
+        title: z.string().optional(),
+        description: z.string().optional(),
+        category: z.string().optional(),
+        targetDate: z.date().optional(),
+        status: z.enum(["active", "completed", "abandoned"]).optional(),
+        progress: z.number().min(0).max(100).optional(),
+        completedAt: z.date().optional(),
+      }))
+      .mutation(async ({ input }) => {
+        const { id, ...data } = input;
+        return db.updateGoal(id, { ...data, updatedAt: new Date() });
+      }),
+
+    checkin: protectedProcedure
+      .input(z.object({
+        goalId: z.string(),
+        progress: z.number().min(0).max(100),
+        notes: z.string().optional(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        // Create checkin
+        const checkin = await db.createGoalCheckin({
+          id: nanoid(),
+          userId: ctx.user.id,
+          ...input,
+          createdAt: new Date(),
+        });
+
+        // Update goal progress
+        await db.updateGoal(input.goalId, {
+          progress: input.progress,
+          updatedAt: new Date(),
+        });
+
+        return checkin;
+      }),
+
+    getCheckins: protectedProcedure
+      .input(z.object({ goalId: z.string() }))
+      .query(async ({ input }) => {
+        return db.getGoalCheckins(input.goalId);
+      }),
+  }),
+
+  // ============================================
+  // TRANSACTIONS ROUTER
+  // ============================================
+  transactions: router({
+    list: protectedProcedure
+      .input(z.object({
+        startDate: z.date().optional(),
+        endDate: z.date().optional(),
+      }).optional())
+      .query(async ({ ctx, input }) => {
+        return db.getUserTransactions(
+          ctx.user.id,
+          input?.startDate,
+          input?.endDate
+        );
+      }),
+
+    create: protectedProcedure
+      .input(z.object({
+        type: z.enum(["income", "expense"]),
+        amount: z.number(),
+        currency: z.string().default("EUR"),
+        category: z.string().optional(),
+        description: z.string().optional(),
+        date: z.date(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        return db.createTransaction({
+          id: nanoid(),
+          userId: ctx.user.id,
+          ...input,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        });
+      }),
+
+    update: protectedProcedure
+      .input(z.object({
+        id: z.string(),
+        type: z.enum(["income", "expense"]).optional(),
+        amount: z.number().optional(),
+        category: z.string().optional(),
+        description: z.string().optional(),
+        date: z.date().optional(),
+      }))
+      .mutation(async ({ input }) => {
+        const { id, ...data } = input;
+        return db.updateTransaction(id, { ...data, updatedAt: new Date() });
+      }),
+
+    delete: protectedProcedure
+      .input(z.object({ id: z.string() }))
+      .mutation(async ({ input }) => {
+        return db.deleteTransaction(input.id);
+      }),
+
+    // AI: Categorize transaction
+    categorize: protectedProcedure
+      .input(z.object({
+        transactionId: z.string(),
+        description: z.string(),
+      }))
+      .mutation(async ({ input }) => {
+        // TODO: Implement AI categorization
+        return {
+          category: "Uncategorized",
+          confidence: 0,
+        };
+      }),
+  }),
+
+  // ============================================
+  // FINANCIAL CATEGORIES ROUTER
+  // ============================================
+  financialCategories: router({
+    list: protectedProcedure.query(async ({ ctx }) => {
+      return db.getUserFinancialCategories(ctx.user.id);
+    }),
+
+    create: protectedProcedure
+      .input(z.object({
+        name: z.string(),
+        type: z.enum(["income", "expense"]),
+        color: z.string().optional(),
+        icon: z.string().optional(),
+        budget: z.number().optional(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        return db.createFinancialCategory({
+          id: nanoid(),
+          userId: ctx.user.id,
+          ...input,
+          createdAt: new Date(),
+        });
+      }),
+  }),
+
+  // ============================================
+  // DIARY ROUTER
+  // ============================================
+  diary: router({
+    list: protectedProcedure.query(async ({ ctx }) => {
+      return db.getUserDiaryEntries(ctx.user.id);
+    }),
+
+    create: protectedProcedure
+      .input(z.object({
+        title: z.string().optional(),
+        content: z.string(),
+        mood: z.enum(["very_bad", "bad", "neutral", "good", "very_good"]).optional(),
+        date: z.date(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        return db.createDiaryEntry({
+          id: nanoid(),
+          userId: ctx.user.id,
+          ...input,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        });
+      }),
+
+    update: protectedProcedure
+      .input(z.object({
+        id: z.string(),
+        title: z.string().optional(),
+        content: z.string().optional(),
+        mood: z.enum(["very_bad", "bad", "neutral", "good", "very_good"]).optional(),
+      }))
+      .mutation(async ({ input }) => {
+        const { id, ...data } = input;
+        return db.updateDiaryEntry(id, { ...data, updatedAt: new Date() });
+      }),
+
+    // AI: Analyze sentiment
+    analyzeSentiment: protectedProcedure
+      .input(z.object({ entryId: z.string(), content: z.string() }))
+      .mutation(async ({ input }) => {
+        // TODO: Implement AI sentiment analysis
+        return {
+          sentiment: "neutral",
+          emotions: [],
+          insights: "",
+        };
+      }),
+  }),
+
+  // ============================================
+  // CHAT ROUTER (AI Assistant)
+  // ============================================
+  chat: router({
+    history: protectedProcedure
+      .input(z.object({ limit: z.number().default(50) }))
+      .query(async ({ ctx, input }) => {
+        return db.getUserChatMessages(ctx.user.id, input.limit);
+      }),
+
+    send: protectedProcedure
+      .input(z.object({ message: z.string() }))
+      .mutation(async ({ ctx, input }) => {
+        // Save user message
+        await db.createChatMessage({
+          id: nanoid(),
+          userId: ctx.user.id,
+          role: "user",
+          content: input.message,
+          createdAt: new Date(),
+        });
+
+        // TODO: Call AI to get response
+        const aiResponse = "Esta é uma resposta de exemplo. A integração com IA será implementada em breve.";
+
+        // Save AI response
+        await db.createChatMessage({
+          id: nanoid(),
+          userId: ctx.user.id,
+          role: "assistant",
+          content: aiResponse,
+          createdAt: new Date(),
+        });
+
+        return { response: aiResponse };
+      }),
+  }),
+
+  // ============================================
+  // NOTIFICATIONS ROUTER
+  // ============================================
+  notifications: router({
+    list: protectedProcedure
+      .input(z.object({ unreadOnly: z.boolean().default(false) }))
+      .query(async ({ ctx, input }) => {
+        return db.getUserNotifications(ctx.user.id, input.unreadOnly);
+      }),
+
+    markAsRead: protectedProcedure
+      .input(z.object({ id: z.string() }))
+      .mutation(async ({ input }) => {
+        return db.markNotificationAsRead(input.id);
+      }),
+  }),
+
+  // ============================================
+  // AUTOMATIONS ROUTER
+  // ============================================
+  automations: router({
+    list: protectedProcedure.query(async ({ ctx }) => {
+      return db.getUserAutomations(ctx.user.id);
+    }),
+
+    create: protectedProcedure
+      .input(z.object({
+        name: z.string(),
+        description: z.string().optional(),
+        trigger: z.string(), // JSON string
+        action: z.string(), // JSON string
+        isActive: z.boolean().default(true),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        return db.createAutomation({
+          id: nanoid(),
+          userId: ctx.user.id,
+          ...input,
+          runCount: 0,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        });
+      }),
+
+    toggle: protectedProcedure
+      .input(z.object({ id: z.string(), isActive: z.boolean() }))
+      .mutation(async ({ input }) => {
+        return db.updateAutomation(input.id, {
+          isActive: input.isActive,
+          updatedAt: new Date(),
+        });
+      }),
+  }),
+
+  // ============================================
+  // USER SETTINGS ROUTER
+  // ============================================
+  settings: router({
+    get: protectedProcedure.query(async ({ ctx }) => {
+      return db.getUserSettings(ctx.user.id);
+    }),
+
+    update: protectedProcedure
+      .input(z.object({
+        theme: z.enum(["light", "dark", "auto"]).optional(),
+        notifications: z.boolean().optional(),
+        emailNotifications: z.boolean().optional(),
+        weekStartsOn: z.number().min(0).max(6).optional(),
+        dateFormat: z.string().optional(),
+        timeFormat: z.string().optional(),
+        currency: z.string().optional(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        return db.upsertUserSettings({
+          id: nanoid(),
+          userId: ctx.user.id,
+          ...input,
+          updatedAt: new Date(),
+        });
+      }),
+  }),
+
+  // ============================================
+  // DASHBOARD ROUTER
+  // ============================================
+  dashboard: router({
+    stats: protectedProcedure.query(async ({ ctx }) => {
+      const tasks = await db.getUserTasks(ctx.user.id);
+      const goals = await db.getUserGoals(ctx.user.id);
+      const today = new Date();
+      const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+      const endOfMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+      
+      const transactions = await db.getUserTransactions(ctx.user.id, startOfMonth, endOfMonth);
+      const events = await db.getUserEvents(ctx.user.id, today, today);
+
+      const income = transactions
+        .filter(t => t.type === "income")
+        .reduce((sum, t) => sum + t.amount, 0);
+      
+      const expenses = transactions
+        .filter(t => t.type === "expense")
+        .reduce((sum, t) => sum + t.amount, 0);
+
+      return {
+        tasks: {
+          total: tasks.length,
+          today: tasks.filter(t => {
+            if (!t.dueDate) return false;
+            const dueDate = new Date(t.dueDate);
+            return dueDate.toDateString() === today.toDateString();
+          }).length,
+          completed: tasks.filter(t => t.status === "done").length,
+        },
+        events: {
+          today: events.length,
+        },
+        goals: {
+          active: goals.filter(g => g.status === "active").length,
+          averageProgress: goals.length > 0
+            ? Math.round(goals.reduce((sum, g) => sum + (g.progress || 0), 0) / goals.length)
+            : 0,
+        },
+        finances: {
+          income: income / 100, // Convert cents to euros
+          expenses: expenses / 100,
+          balance: (income - expenses) / 100,
+        },
+      };
+    }),
+  }),
+
+  // ============================================
+  // GOOGLE INTEGRATION ROUTER
+  // ============================================
+  google: router({
+    getAuthUrl: protectedProcedure.query(async () => {
+      const { getOAuth2Client, getAuthUrl } = await import("./googleCalendar");
+      try {
+        const oauth2Client = getOAuth2Client();
+        const authUrl = getAuthUrl(oauth2Client);
+        return { authUrl };
+      } catch (error: any) {
+        return { error: error.message, authUrl: null };
+      }
+    }),
+
+    exchangeCode: protectedProcedure
+      .input(z.object({ code: z.string() }))
+      .mutation(async ({ ctx, input }) => {
+        const { getOAuth2Client, getTokensFromCode } = await import("./googleCalendar");
+        const { upsertGoogleToken } = await import("./googleDb");
+
+        try {
+          const oauth2Client = getOAuth2Client();
+          const tokens = await getTokensFromCode(oauth2Client, input.code);
+
+          await upsertGoogleToken({
+            userId: ctx.user.id,
+            accessToken: tokens.access_token!,
+            refreshToken: tokens.refresh_token || undefined,
+            expiryDate: tokens.expiry_date ? new Date(tokens.expiry_date) : undefined,
+            scope: tokens.scope,
+            tokenType: tokens.token_type || "Bearer",
+          });
+
+          return { success: true };
+        } catch (error: any) {
+          return { success: false, error: error.message };
+        }
+      }),
+
+    hasToken: protectedProcedure.query(async ({ ctx }) => {
+      const { getGoogleToken } = await import("./googleDb");
+      const token = await getGoogleToken(ctx.user.id);
+      return { hasToken: !!token };
+    }),
+
+    disconnect: protectedProcedure.mutation(async ({ ctx }) => {
+      const { deleteGoogleToken } = await import("./googleDb");
+      await deleteGoogleToken(ctx.user.id);
+      return { success: true };
+    }),
+
+    importEvents: protectedProcedure
+      .input(z.object({
+        timeMin: z.date().optional(),
+        timeMax: z.date().optional(),
+      }).optional())
+      .mutation(async ({ ctx, input }) => {
+        const { getGoogleToken } = await import("./googleDb");
+        const { importEventsFromGoogle } = await import("./googleCalendar");
+
+        const token = await getGoogleToken(ctx.user.id);
+        if (!token) {
+          throw new Error("Google Calendar not connected");
+        }
+
+        const importedEvents = await importEventsFromGoogle(
+          token.accessToken,
+          input?.timeMin,
+          input?.timeMax
+        );
+
+        const savedEvents = [];
+        for (const event of importedEvents) {
+          const saved = await db.createEvent({
+            id: nanoid(),
+            userId: ctx.user.id,
+            title: event.title,
+            description: event.description,
+            startDate: event.startDate,
+            endDate: event.endDate,
+            location: event.location,
+            isAllDay: event.isAllDay,
+            googleEventId: event.googleEventId,
+            createdAt: new Date(),
+            updatedAt: new Date(),
+          });
+          savedEvents.push(saved);
+        }
+
+        return { count: savedEvents.length, events: savedEvents };
+      }),
+
+    exportEvents: protectedProcedure
+      .input(z.object({
+        eventIds: z.array(z.string()).optional(),
+      }).optional())
+      .mutation(async ({ ctx, input }) => {
+        const { getGoogleToken } = await import("./googleDb");
+        const { syncEventsToGoogle } = await import("./googleCalendar");
+
+        const token = await getGoogleToken(ctx.user.id);
+        if (!token) {
+          throw new Error("Google Calendar not connected");
+        }
+
+        // Obter todos os eventos do utilizador
+        const dbEvents = await db.getUserEvents(ctx.user.id);
+        
+        // Converter para o formato esperado pela função de sincronização
+        const events = dbEvents.map(e => ({
+          title: e.title,
+          description: e.description || undefined,
+          startDate: e.startDate,
+          endDate: e.endDate,
+          location: e.location || undefined,
+        }));
+
+        const results = await syncEventsToGoogle(token.accessToken, events);
+        return { results };
+      }),
+  }),
+
+  // ============================================
+  // AI ROUTER
+  // ============================================
+  ai: router({
+    chat: protectedProcedure
+      .input(z.object({
+        message: z.string(),
+        context: z.object({
+          userName: z.string(),
+          currentDate: z.string(),
+        }).optional(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const { invokeLLM } = await import("./_core/llm");
+
+        try {
+          const systemPrompt = `Você é um assistente inteligente do Organiza-te360, uma plataforma premium de produtividade e organização pessoal.
+
+Seu papel:
+- Ajudar com análise de tarefas e produtividade
+- Dar sugestões de organização personalizadas
+- Fornecer insights financeiros
+- Auxiliar no planeamento de objetivos
+- Dar dicas de bem-estar e equilíbrio
+
+Tom: Profissional, amigável e motivador.
+Idioma: Português Europeu.
+Utilizador: ${input.context?.userName || "Utilizador"}
+Data atual: ${input.context?.currentDate || new Date().toISOString()}`;
+
+          const response = await invokeLLM({
+            messages: [
+              { role: "system", content: systemPrompt },
+              { role: "user", content: input.message },
+            ],
+          });
+
+          const content = response.choices[0]?.message?.content;
+          return {
+            response: typeof content === 'string' ? content : "Desculpe, não consegui processar a sua mensagem.",
+          };
+        } catch (error: any) {
+          console.error("[AI] Chat error:", error);
+          return {
+            response: "Desculpe, ocorreu um erro ao processar a sua mensagem. Por favor, tente novamente.",
+          };
+        }
+      }),
+
+    categorizeTransaction: protectedProcedure
+      .input(z.object({
+        description: z.string(),
+        amount: z.number(),
+      }))
+      .mutation(async ({ input }) => {
+        const { invokeLLM } = await import("./_core/llm");
+
+        try {
+          const response = await invokeLLM({
+            messages: [
+              {
+                role: "system",
+                content: "Você é um especialista em categorização de transações financeiras. Responda APENAS com a categoria em português, sem explicações adicionais. Categorias possíveis: Alimentação, Transporte, Saúde, Educação, Entretenimento, Compras, Habitação, Serviços, Salário, Investimentos, Outros.",
+              },
+              {
+                role: "user",
+                content: `Categorize esta transação: "${input.description}" no valor de €${input.amount}`,
+              },
+            ],
+          });
+
+          const content = response.choices[0]?.message?.content;
+          const category = typeof content === 'string' ? content.trim() : "Outros";
+          return { category };
+        } catch (error: any) {
+          console.error("[AI] Categorization error:", error);
+          return { category: "Outros" };
+        }
+      }),
+
+    analyzeSentiment: protectedProcedure
+      .input(z.object({
+        text: z.string(),
+      }))
+      .mutation(async ({ input }) => {
+        const { invokeLLM } = await import("./_core/llm");
+
+        try {
+          const response = await invokeLLM({
+            messages: [
+              {
+                role: "system",
+                content: "Analise o sentimento do texto e responda APENAS com um JSON no formato: {\"sentiment\": \"positive\" | \"neutral\" | \"negative\", \"score\": 0-100, \"keywords\": [\"palavra1\", \"palavra2\"]}",
+              },
+              { role: "user", content: input.text },
+            ],
+          });
+
+          const content = response.choices[0]?.message?.content;
+          const result = JSON.parse(typeof content === 'string' ? content : '{}');
+          return result;
+        } catch (error: any) {
+          console.error("[AI] Sentiment analysis error:", error);
+          return { sentiment: "neutral", score: 50, keywords: [] };
+        }
+      }),
+  }),
+});
+
+export type AppRouter = typeof appRouter;

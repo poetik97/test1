@@ -1,0 +1,452 @@
+import { useState } from "react";
+import { useAuth } from "@/_core/hooks/useAuth";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { 
+  Plus, 
+  Search, 
+  Filter,
+  CheckSquare,
+  Circle,
+  Clock,
+  Flag,
+  Trash2,
+  Edit,
+  ChevronRight,
+  Sparkles,
+  Calendar as CalendarIcon
+} from "lucide-react";
+import { Link } from "wouter";
+
+type TaskStatus = "todo" | "in_progress" | "done";
+type TaskPriority = "low" | "medium" | "high" | "urgent";
+
+interface Task {
+  id: string;
+  title: string;
+  description?: string;
+  status: TaskStatus;
+  priority: TaskPriority;
+  category?: string;
+  dueDate?: string;
+  aiSuggestion?: string;
+}
+
+export default function Tasks() {
+  const { user } = useAuth();
+  const [searchQuery, setSearchQuery] = useState("");
+  const [filterStatus, setFilterStatus] = useState<TaskStatus | "all">("all");
+  const [tasks, setTasks] = useState<Task[]>(mockTasks);
+
+  const filteredTasks = tasks.filter(task => {
+    const matchesSearch = task.title.toLowerCase().includes(searchQuery.toLowerCase());
+    const matchesFilter = filterStatus === "all" || task.status === filterStatus;
+    return matchesSearch && matchesFilter;
+  });
+
+  const tasksByStatus = {
+    todo: filteredTasks.filter(t => t.status === "todo"),
+    in_progress: filteredTasks.filter(t => t.status === "in_progress"),
+    done: filteredTasks.filter(t => t.status === "done"),
+  };
+
+  if (!user) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <h2 className="text-2xl font-bold mb-4">Acesso Negado</h2>
+          <p className="text-muted-foreground mb-6">Precisa de fazer login</p>
+          <Link href="/">
+            <Button>Voltar à Página Inicial</Button>
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-background via-background to-purple-50/20 dark:to-purple-950/10">
+      {/* Header */}
+      <header className="border-b border-border/40 backdrop-blur-xl bg-background/80 sticky top-0 z-50">
+        <div className="container mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="flex items-center justify-between h-16">
+            <Link href="/dashboard">
+              <h1 className="text-xl font-bold gradient-text cursor-pointer">Organiza-te360</h1>
+            </Link>
+            
+            <nav className="hidden md:flex items-center gap-6">
+              <Link href="/dashboard">
+                <a className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors">
+                  Dashboard
+                </a>
+              </Link>
+              <Link href="/tasks">
+                <a className="text-sm font-medium text-foreground border-b-2 border-primary">
+                  Tarefas
+                </a>
+              </Link>
+              <Link href="/calendar">
+                <a className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors">
+                  Calendário
+                </a>
+              </Link>
+              <Link href="/finances">
+                <a className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors">
+                  Finanças
+                </a>
+              </Link>
+              <Link href="/goals">
+                <a className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors">
+                  Objetivos
+                </a>
+              </Link>
+            </nav>
+
+            <Link href="/dashboard">
+              <Button variant="ghost" size="sm">Voltar</Button>
+            </Link>
+          </div>
+        </div>
+      </header>
+
+      {/* Main Content */}
+      <main className="container mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {/* Page Header */}
+        <div className="mb-8">
+          <div className="flex items-center justify-between mb-6">
+            <div>
+              <h2 className="text-3xl font-bold flex items-center gap-3">
+                <CheckSquare className="w-8 h-8 text-primary" />
+                Gestão de Tarefas
+              </h2>
+              <p className="text-muted-foreground mt-1">
+                Organize e priorize as suas tarefas com inteligência
+              </p>
+            </div>
+            
+            <Button className="bg-gradient-to-r from-primary to-purple-600 hover:opacity-90 glow-premium">
+              <Plus className="w-5 h-5 mr-2" />
+              Nova Tarefa
+            </Button>
+          </div>
+
+          {/* Search and Filters */}
+          <div className="flex flex-col sm:flex-row gap-4">
+            <div className="flex-1 relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
+              <Input 
+                placeholder="Pesquisar tarefas..." 
+                className="pl-10 glass-subtle border-border/50"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+              />
+            </div>
+            
+            <div className="flex gap-2">
+              <Button 
+                variant={filterStatus === "all" ? "default" : "outline"}
+                onClick={() => setFilterStatus("all")}
+                className={filterStatus === "all" ? "bg-gradient-to-r from-primary to-purple-600" : ""}
+              >
+                Todas
+              </Button>
+              <Button 
+                variant={filterStatus === "todo" ? "default" : "outline"}
+                onClick={() => setFilterStatus("todo")}
+                className={filterStatus === "todo" ? "bg-gradient-to-r from-primary to-purple-600" : ""}
+              >
+                A Fazer
+              </Button>
+              <Button 
+                variant={filterStatus === "in_progress" ? "default" : "outline"}
+                onClick={() => setFilterStatus("in_progress")}
+                className={filterStatus === "in_progress" ? "bg-gradient-to-r from-primary to-purple-600" : ""}
+              >
+                Em Progresso
+              </Button>
+              <Button 
+                variant={filterStatus === "done" ? "default" : "outline"}
+                onClick={() => setFilterStatus("done")}
+                className={filterStatus === "done" ? "bg-gradient-to-r from-primary to-purple-600" : ""}
+              >
+                Concluídas
+              </Button>
+            </div>
+          </div>
+        </div>
+
+        {/* Stats */}
+        <div className="grid grid-cols-1 sm:grid-cols-4 gap-4 mb-8">
+          <Card className="glass-premium border-border/50">
+            <CardContent className="pt-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-muted-foreground">Total</p>
+                  <p className="text-2xl font-bold gradient-text">{tasks.length}</p>
+                </div>
+                <CheckSquare className="w-8 h-8 text-primary/30" />
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="glass-premium border-border/50">
+            <CardContent className="pt-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-muted-foreground">A Fazer</p>
+                  <p className="text-2xl font-bold text-orange-500">{tasksByStatus.todo.length}</p>
+                </div>
+                <Circle className="w-8 h-8 text-orange-500/30" />
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="glass-premium border-border/50">
+            <CardContent className="pt-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-muted-foreground">Em Progresso</p>
+                  <p className="text-2xl font-bold text-cyan-500">{tasksByStatus.in_progress.length}</p>
+                </div>
+                <Clock className="w-8 h-8 text-cyan-500/30" />
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="glass-premium border-border/50">
+            <CardContent className="pt-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-muted-foreground">Concluídas</p>
+                  <p className="text-2xl font-bold text-green-500">{tasksByStatus.done.length}</p>
+                </div>
+                <CheckSquare className="w-8 h-8 text-green-500/30" />
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Tasks Grid */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* To Do Column */}
+          <div>
+            <div className="flex items-center gap-2 mb-4">
+              <div className="w-3 h-3 rounded-full bg-orange-500" />
+              <h3 className="font-semibold">A Fazer</h3>
+              <span className="text-sm text-muted-foreground">({tasksByStatus.todo.length})</span>
+            </div>
+            <div className="space-y-3">
+              {tasksByStatus.todo.map(task => (
+                <TaskCard key={task.id} task={task} />
+              ))}
+              {tasksByStatus.todo.length === 0 && (
+                <div className="text-center py-8 text-muted-foreground text-sm">
+                  Nenhuma tarefa a fazer
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* In Progress Column */}
+          <div>
+            <div className="flex items-center gap-2 mb-4">
+              <div className="w-3 h-3 rounded-full bg-cyan-500" />
+              <h3 className="font-semibold">Em Progresso</h3>
+              <span className="text-sm text-muted-foreground">({tasksByStatus.in_progress.length})</span>
+            </div>
+            <div className="space-y-3">
+              {tasksByStatus.in_progress.map(task => (
+                <TaskCard key={task.id} task={task} />
+              ))}
+              {tasksByStatus.in_progress.length === 0 && (
+                <div className="text-center py-8 text-muted-foreground text-sm">
+                  Nenhuma tarefa em progresso
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Done Column */}
+          <div>
+            <div className="flex items-center gap-2 mb-4">
+              <div className="w-3 h-3 rounded-full bg-green-500" />
+              <h3 className="font-semibold">Concluídas</h3>
+              <span className="text-sm text-muted-foreground">({tasksByStatus.done.length})</span>
+            </div>
+            <div className="space-y-3">
+              {tasksByStatus.done.map(task => (
+                <TaskCard key={task.id} task={task} />
+              ))}
+              {tasksByStatus.done.length === 0 && (
+                <div className="text-center py-8 text-muted-foreground text-sm">
+                  Nenhuma tarefa concluída
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* AI Insights */}
+        <Card className="mt-8 glass-premium border-primary/20 glow-premium">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Sparkles className="w-5 h-5 text-primary" />
+              Sugestões de IA
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-3">
+              <div className="p-4 rounded-lg bg-gradient-to-br from-primary/10 to-purple-600/10 border border-primary/20">
+                <p className="text-sm leading-relaxed">
+                  💡 <strong>Priorização Inteligente:</strong> Baseado no seu histórico, 
+                  recomendamos começar por "Preparar apresentação" - tarefas similares 
+                  são mais produtivas pela manhã.
+                </p>
+              </div>
+              <div className="p-4 rounded-lg bg-gradient-to-br from-cyan-500/10 to-blue-600/10 border border-cyan-500/20">
+                <p className="text-sm leading-relaxed">
+                  ⏰ <strong>Gestão de Tempo:</strong> Tem 3 tarefas urgentes para hoje. 
+                  Sugerimos bloquear 2h de foco sem interrupções.
+                </p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </main>
+    </div>
+  );
+}
+
+function TaskCard({ task }: { task: Task }) {
+  const priorityColors = {
+    low: "bg-green-500/10 text-green-500 border-green-500/20",
+    medium: "bg-orange-500/10 text-orange-500 border-orange-500/20",
+    high: "bg-red-500/10 text-red-500 border-red-500/20",
+    urgent: "bg-purple-500/10 text-purple-500 border-purple-500/20",
+  };
+
+  const priorityLabels = {
+    low: "Baixa",
+    medium: "Média",
+    high: "Alta",
+    urgent: "Urgente",
+  };
+
+  return (
+    <Card className="glass-premium hover-lift border-border/50 cursor-pointer group">
+      <CardContent className="p-4">
+        <div className="flex items-start justify-between mb-3">
+          <h4 className="font-semibold group-hover:text-primary transition-colors">
+            {task.title}
+          </h4>
+          <div className="flex items-center gap-1">
+            <Button variant="ghost" size="sm" className="h-8 w-8 p-0 opacity-0 group-hover:opacity-100 transition-opacity">
+              <Edit className="w-4 h-4" />
+            </Button>
+            <Button variant="ghost" size="sm" className="h-8 w-8 p-0 opacity-0 group-hover:opacity-100 transition-opacity text-destructive">
+              <Trash2 className="w-4 h-4" />
+            </Button>
+          </div>
+        </div>
+
+        {task.description && (
+          <p className="text-sm text-muted-foreground mb-3 line-clamp-2">
+            {task.description}
+          </p>
+        )}
+
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <span className={`text-xs px-2 py-1 rounded-full border ${priorityColors[task.priority]}`}>
+              <Flag className="w-3 h-3 inline mr-1" />
+              {priorityLabels[task.priority]}
+            </span>
+            {task.category && (
+              <span className="text-xs px-2 py-1 rounded-full bg-muted/50 text-muted-foreground">
+                {task.category}
+              </span>
+            )}
+          </div>
+          
+          {task.dueDate && (
+            <div className="flex items-center gap-1 text-xs text-muted-foreground">
+              <CalendarIcon className="w-3 h-3" />
+              {task.dueDate}
+            </div>
+          )}
+        </div>
+
+        {task.aiSuggestion && (
+          <div className="mt-3 p-2 rounded-lg bg-primary/5 border border-primary/10">
+            <p className="text-xs text-primary flex items-start gap-1">
+              <Sparkles className="w-3 h-3 mt-0.5 flex-shrink-0" />
+              <span>{task.aiSuggestion}</span>
+            </p>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+const mockTasks: Task[] = [
+  {
+    id: "1",
+    title: "Reunião com equipa",
+    description: "Discutir progresso do projeto e próximos passos",
+    status: "todo",
+    priority: "high",
+    category: "Trabalho",
+    dueDate: "Hoje, 09:00",
+    aiSuggestion: "Prepare agenda com antecedência para reunião mais produtiva"
+  },
+  {
+    id: "2",
+    title: "Rever propostas de projeto",
+    description: "Analisar 3 propostas recebidas e dar feedback",
+    status: "todo",
+    priority: "medium",
+    category: "Trabalho",
+    dueDate: "Hoje, 11:30"
+  },
+  {
+    id: "3",
+    title: "Fazer exercício físico",
+    status: "todo",
+    priority: "low",
+    category: "Saúde",
+    dueDate: "Hoje, 18:30"
+  },
+  {
+    id: "4",
+    title: "Preparar apresentação",
+    description: "Slides para reunião de sexta-feira",
+    status: "in_progress",
+    priority: "high",
+    category: "Trabalho",
+    dueDate: "Amanhã"
+  },
+  {
+    id: "5",
+    title: "Responder emails importantes",
+    status: "in_progress",
+    priority: "medium",
+    category: "Trabalho"
+  },
+  {
+    id: "6",
+    title: "Comprar mantimentos",
+    status: "done",
+    priority: "low",
+    category: "Pessoal"
+  },
+  {
+    id: "7",
+    title: "Ler artigo sobre produtividade",
+    status: "done",
+    priority: "low",
+    category: "Desenvolvimento"
+  }
+];
+
