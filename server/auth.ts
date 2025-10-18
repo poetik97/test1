@@ -1,6 +1,6 @@
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
-import { prisma } from './db';
+import supabase from './supabase';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-in-production';
 const SALT_ROUNDS = 10;
@@ -49,9 +49,11 @@ export function verifyToken(token: string): AuthUser | null {
 // Register new user
 export async function registerUser(email: string, password: string, name: string) {
   // Check if user already exists
-  const existingUser = await prisma.user.findUnique({
-    where: { email },
-  });
+  const { data: existingUser } = await supabase
+    .from('users')
+    .select('id')
+    .eq('email', email)
+    .maybeSingle();
 
   if (existingUser) {
     throw new Error('Email já está em uso');
@@ -61,15 +63,21 @@ export async function registerUser(email: string, password: string, name: string
   const passwordHash = await hashPassword(password);
 
   // Create user
-  const user = await prisma.user.create({
-    data: {
+  const { data: user, error } = await supabase
+    .from('users')
+    .insert({
       email,
       password: passwordHash,
       name,
       role: 'user',
       loginMethod: 'email',
-    },
-  });
+    })
+    .select()
+    .single();
+
+  if (error || !user) {
+    throw new Error('Erro ao criar usuário');
+  }
 
   // Generate token
   const token = generateToken({
@@ -85,9 +93,11 @@ export async function registerUser(email: string, password: string, name: string
 // Login user
 export async function loginUser(email: string, password: string) {
   // Find user
-  const user = await prisma.user.findUnique({
-    where: { email },
-  });
+  const { data: user } = await supabase
+    .from('users')
+    .select('*')
+    .eq('email', email)
+    .maybeSingle();
 
   if (!user || !user.password) {
     throw new Error('Email ou password inválidos');
@@ -101,10 +111,10 @@ export async function loginUser(email: string, password: string) {
   }
 
   // Update last signed in
-  await prisma.user.update({
-    where: { id: user.id },
-    data: { lastSignedIn: new Date() },
-  });
+  await supabase
+    .from('users')
+    .update({ lastSignedIn: new Date().toISOString() })
+    .eq('id', user.id);
 
   // Generate token
   const token = generateToken({
@@ -120,14 +130,16 @@ export async function loginUser(email: string, password: string) {
 // Get user from token
 export async function getUserFromToken(token: string) {
   const decoded = verifyToken(token);
-  
+
   if (!decoded) {
     return null;
   }
 
-  const user = await prisma.user.findUnique({
-    where: { id: decoded.id },
-  });
+  const { data: user } = await supabase
+    .from('users')
+    .select('*')
+    .eq('id', decoded.id)
+    .maybeSingle();
 
   return user;
 }

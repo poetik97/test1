@@ -3,7 +3,7 @@ import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
 import { publicProcedure, protectedProcedure, router } from "./_core/trpc";
 import { z } from "zod";
-import prisma from "./db";
+import supabase from "./supabase";
 import { registerUser, loginUser } from "./auth";
 
 export const appRouter = router({
@@ -58,10 +58,14 @@ export const appRouter = router({
 
   tasks: router({
     list: protectedProcedure.query(async ({ ctx }) => {
-      return await prisma.task.findMany({
-        where: { userId: ctx.user.id },
-        orderBy: { createdAt: 'desc' },
-      });
+      const { data, error } = await supabase
+        .from('tasks')
+        .select('*')
+        .eq('userId', ctx.user.id)
+        .order('createdAt', { ascending: false });
+
+      if (error) throw error;
+      return data || [];
     }),
 
     create: protectedProcedure
@@ -76,27 +80,37 @@ export const appRouter = router({
         estimatedTime: z.number().optional(),
       }))
       .mutation(async ({ ctx, input }) => {
-        return await prisma.task.create({
-          data: {
+        const { data, error } = await supabase
+          .from('tasks')
+          .insert({
             userId: ctx.user.id,
             title: input.title,
             description: input.description,
             status: input.status || 'todo',
             priority: input.priority || 'medium',
             category: input.category || 'other',
-            dueDate: input.dueDate ? new Date(input.dueDate) : null,
+            dueDate: input.dueDate || null,
             scheduledTime: input.scheduledTime,
             estimatedTime: input.estimatedTime,
-          },
-        });
+          })
+          .select()
+          .single();
+
+        if (error) throw error;
+        return data;
       }),
 
     getById: protectedProcedure
       .input(z.object({ id: z.string() }))
       .query(async ({ ctx, input }) => {
-        return await prisma.task.findFirst({
-          where: { id: input.id, userId: ctx.user.id },
-        });
+        const { data } = await supabase
+          .from('tasks')
+          .select('*')
+          .eq('id', input.id)
+          .eq('userId', ctx.user.id)
+          .maybeSingle();
+
+        return data;
       }),
 
     update: protectedProcedure
@@ -112,36 +126,53 @@ export const appRouter = router({
         estimatedTime: z.number().optional(),
       }))
       .mutation(async ({ ctx, input }) => {
-        const { id, ...data } = input;
-        return await prisma.task.update({
-          where: { id },
-          data: {
-            ...data,
-            dueDate: data.dueDate ? new Date(data.dueDate) : undefined,
-          },
-        });
+        const { id, ...updates } = input;
+        const { data, error } = await supabase
+          .from('tasks')
+          .update(updates)
+          .eq('id', id)
+          .eq('userId', ctx.user.id)
+          .select()
+          .single();
+
+        if (error) throw error;
+        return data;
       }),
 
     delete: protectedProcedure
       .input(z.object({ id: z.string() }))
       .mutation(async ({ ctx, input }) => {
-        return await prisma.task.delete({
-          where: { id: input.id },
-        });
+        const { error } = await supabase
+          .from('tasks')
+          .delete()
+          .eq('id', input.id)
+          .eq('userId', ctx.user.id);
+
+        if (error) throw error;
+        return { success: true };
       }),
 
     toggleStatus: protectedProcedure
       .input(z.object({ id: z.string() }))
       .mutation(async ({ ctx, input }) => {
-        const task = await prisma.task.findFirst({
-          where: { id: input.id, userId: ctx.user.id },
-        });
+        const { data: task } = await supabase
+          .from('tasks')
+          .select('status')
+          .eq('id', input.id)
+          .eq('userId', ctx.user.id)
+          .single();
+
         if (!task) throw new Error('Task not found');
-        
-        return await prisma.task.update({
-          where: { id: input.id },
-          data: { status: task.status === 'done' ? 'todo' : 'done' },
-        });
+
+        const { data, error } = await supabase
+          .from('tasks')
+          .update({ status: task.status === 'done' ? 'todo' : 'done' })
+          .eq('id', input.id)
+          .select()
+          .single();
+
+        if (error) throw error;
+        return data;
       }),
   }),
 
